@@ -1,0 +1,77 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #0f172a;
+  color: #f1f5f9;
+  text-align: center;
+}
+
+.app {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* The video and canvas sit on top of each other. */
+.camera-box {
+  position: relative;
+  width: 640px;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  margin: 0 auto;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1); /* mirror, so it feels like a mirror */
+}
+
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  font-size: 1.4rem;
+  margin: 16px 0;
+}
+
+.target {
+  display: inline-block;
+  padding: 12px 32px;
+  border: 3px solid #475569;
+  border-radius: 12px;
+  font-size: 1.2rem;
+}
+
+.target-emoji {
+  font-size: 4rem;
+}
+
+/* Turns green while you are showing the right gesture. */
+.target.matching {
+  border-color: #22c55e;
+  background: #14532d;
+}
+
+.seen {
+  color: #94a3b8;
+}
+
+button {
+  font-size: 1.1rem;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: #22d3ee;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.error {
+  color: #f87171;
+}
