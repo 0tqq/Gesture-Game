@@ -1,32 +1,90 @@
-// Turns 21 hand landmarks into a gesture name.
+// Turns 21 hand landmarks into a gesture name, using angles.
 //
-// MediaPipe gives us 21 points per hand. Each point has x and y between
-// 0 and 1, where y = 0 is the TOP of the image and y = 1 is the BOTTOM.
+// MediaPipe gives 21 points per hand (x and y between 0 and 1, y = 0 is the
+// TOP of the image). The ones we use:
 //
-// Fingertip / middle-joint (PIP) indices:
-//   index  : tip 8,  pip 6
-//   middle : tip 12, pip 10
-//   ring   : tip 16, pip 14
-//   pinky  : tip 20, pip 18
+//   Thumb : 2 = base joint, 3 = middle joint, 4 = tip
+//   Index : 5 = base (MCP), 6 = middle joint (PIP), 8 = tip
+//   Middle: 9,  10, 12
+//   Ring  : 13, 14, 16
+//   Pinky : 17, 18, 20
 //
-// Idea: a finger is "up" if its tip is HIGHER on screen (smaller y)
-// than its middle joint. This works when your hand is held upright.
+// Core idea: a straight finger makes a ~180 degree angle at its middle
+// joint. A curled finger folds up and makes a small angle. Because we
+// measure ANGLES (not "is the tip higher than the joint"), a finger counts
+// as straight no matter how the hand is rotated.
 
-function isFingerUp(landmarks, tipIndex, pipIndex) {
-  return landmarks[tipIndex].y < landmarks[pipIndex].y;
+const FINGER_STRAIGHT_ANGLE = 150; // above this, a finger is "extended"
+const THUMB_STRAIGHT_ANGLE = 140; // the thumb bends less, so it is more lenient
+
+// [base joint, middle joint, tip] for each of the four fingers.
+const FINGERS = {
+  index: [5, 6, 8],
+  middle: [9, 10, 12],
+  ring: [13, 14, 16],
+  pinky: [17, 18, 20],
+};
+
+// The angle (in degrees) at point b, formed by the lines b->a and b->c.
+// Worked example: a = (0,1), b = (0,0), c = (0,-1) is a straight line -> 180.
+//   dot product of the two arrows = |arrow1| * |arrow2| * cos(angle)
+//   so angle = acos( dot / (|arrow1| * |arrow2|) )
+export function angleAt(a, b, c) {
+  const v1x = a.x - b.x;
+  const v1y = a.y - b.y;
+  const v2x = c.x - b.x;
+  const v2y = c.y - b.y;
+
+  const dot = v1x * v2x + v1y * v2y;
+  const lengths = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
+  if (lengths === 0) return 0; // two points on top of each other
+
+  // Clamp to [-1, 1]: rounding errors could push it slightly outside,
+  // which would make acos return NaN.
+  const cos = Math.max(-1, Math.min(1, dot / lengths));
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
+function isFingerExtended(landmarks, [base, middle, tip]) {
+  const angle = angleAt(landmarks[base], landmarks[middle], landmarks[tip]);
+  return angle > FINGER_STRAIGHT_ANGLE;
+}
+
+// Thumbs up = thumb is straight AND points upward on screen:
+// tip above middle joint, middle joint above base joint, and the tip is
+// above the knuckle of the index finger (so it is not just resting sideways).
+// This one assumes "up" means up on screen, which is what a thumbs up is.
+function isThumbsUp(landmarks) {
+  const base = landmarks[2];
+  const middle = landmarks[3];
+  const tip = landmarks[4];
+  const indexKnuckle = landmarks[5];
+
+  const straight = angleAt(base, middle, tip) > THUMB_STRAIGHT_ANGLE;
+  const pointingUp =
+    tip.y < middle.y && middle.y < base.y && tip.y < indexKnuckle.y;
+  return straight && pointingUp;
 }
 
 export function detectGesture(landmarks) {
-  const index = isFingerUp(landmarks, 8, 6);
-  const middle = isFingerUp(landmarks, 12, 10);
-  const ring = isFingerUp(landmarks, 16, 14);
-  const pinky = isFingerUp(landmarks, 20, 18);
+  const index = isFingerExtended(landmarks, FINGERS.index);
+  const middle = isFingerExtended(landmarks, FINGERS.middle);
+  const ring = isFingerExtended(landmarks, FINGERS.ring);
+  const pinky = isFingerExtended(landmarks, FINGERS.pinky);
 
-  const upCount = [index, middle, ring, pinky].filter(Boolean).length;
+  const allCurled = !index && !middle && !ring && !pinky;
+  const allStraight = index && middle && ring && pinky;
 
-  if (upCount === 0) return "FIST";
-  if (upCount === 4) return "OPEN_PALM";
+  // Both fist and thumbs up have four curled fingers; the thumb decides.
+  if (allCurled && isThumbsUp(landmarks)) return "THUMBS_UP";
+  if (allCurled) return "FIST";
+
+  if (allStraight) return "OPEN_PALM";
+
+  // For the rest, the thumb is ignored (people hold it in many ways).
   if (index && !middle && !ring && !pinky) return "POINT";
   if (index && middle && !ring && !pinky) return "PEACE";
+  if (index && pinky && !middle && !ring) return "ROCK";
+
   return "NONE";
 }

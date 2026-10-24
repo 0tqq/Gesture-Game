@@ -36,9 +36,11 @@ function App() {
       {!error && !loading && (
         <Hud
           status={game.status}
-          score={game.score}
+          enemy={game.enemy}
           timeLeft={game.timeLeft}
-          target={game.target}
+          defeated={game.defeated}
+          score={game.score}
+          best={game.best}
           gesture={gesture}
           onStart={game.startGame}
         />

@@ -1,6 +1,6 @@
 # Gesture Arena — Beginner Guide
 
-A webcam game: the screen shows a gesture (✊ ✋ ☝️ ✌️), you copy it with your hand, hold it for half a second, and score. 30 seconds per round.
+A webcam survival game: enemies appear one after another, each demanding a gesture (✊ ✋ ☝️ ✌️ 👍 🤘). Copy it and hold it briefly to defeat the enemy before its timer runs out. One miss = game over, and every kill makes the next enemy faster.
 
 Built with React + Vite + JavaScript + MediaPipe Hand Landmarker.
 
@@ -68,34 +68,36 @@ gesture-arena/
 ## 3. File by file
 
 ### `constants.js`
-Holds numbers and gesture info in one place: round length (`GAME_SECONDS`), how long to hold (`HOLD_MS`), and the gesture list with labels and emojis.
-**Test:** change `GAME_SECONDS` to `10`, save, and the round becomes 10 seconds (Vite reloads automatically).
+Holds numbers and gesture info in one place: hold time (`HOLD_MS`), the difficulty curve (start time limit, how much each kill shortens it, the minimum, and the same three numbers for the pause between enemies), and the gesture list with labels and emojis.
+**Test:** change `START_TIME_LIMIT_MS` to `2000`, save, and the first enemy only gives you 2 seconds.
 
 ### `utils/gestures.js` — the brain of gesture recognition
-MediaPipe returns 21 points per hand, each with `x` and `y` between 0 and 1. In images, **y = 0 is the top**, so "higher on screen" means a **smaller y**.
+MediaPipe returns 21 points per hand. We use **angles** instead of "is the tip higher than the joint":
 
-The trick: a finger is "up" if its **tip** is higher than its **middle joint**.
+- A straight finger makes a ~180° angle at its middle joint. A curled finger folds and makes a small angle.
+- `angleAt(a, b, c)` returns the angle at point `b` using the dot product: `angle = acos( dot / (length1 × length2) )`.
+- A finger counts as **extended** if its angle is above 150°.
 
-```js
-landmarks[8].y < landmarks[6].y   // index fingertip above index middle joint
-```
+Because angles don't care which way the hand points, this works even if the hand is tilted or sideways (the test even flips a hand upside down).
 
-Then we count the fingers that are up:
+Count which fingers are extended:
 
-| Fingers up | Result |
+| Fingers | Result |
 |---|---|
-| none | `FIST` |
+| none extended, thumb straight and pointing up | `THUMBS_UP` |
+| none extended, otherwise | `FIST` |
 | all four | `OPEN_PALM` |
 | only index | `POINT` |
 | index + middle | `PEACE` |
+| index + pinky | `ROCK` |
 | anything else | `NONE` |
 
-The thumb is ignored on purpose, because thumb detection is trickier and not needed for four gestures.
-**Limit:** it assumes your hand is upright (fingers pointing up). A sideways hand will confuse it.
+The thumb is only used to tell **fist** from **thumbs up** (straight + tip above its joint + tip above the index knuckle). For all other gestures it is ignored on purpose.
+**Limit:** thumbs up assumes "up" means up on screen.
 
 ### `utils/gestures.test.js`
-Builds fake hands (21 points, with fingertips moved up or down) and checks the answer. No camera needed.
-**Test:** run `npm test`. You should see five `PASS` lines. Try breaking `gestures.js` (e.g. change `<` to `>`) and watch tests fail, then undo it.
+Checks the angle math first (straight line = 180°, right angle = 90°), then builds fake hands for every gesture and checks the answer. No camera needed.
+**Test:** run `npm test`. You should see ten `PASS` lines. Try changing `FINGER_STRAIGHT_ANGLE` to `20` in `gestures.js` and watch tests fail, then undo it.
 
 ### `utils/drawHand.js`
 Draws a cyan dot on each of the 21 points. Landmarks are 0–1, so we multiply by the canvas width/height to get pixels. It clears the canvas first on every frame, otherwise old dots would smear.
@@ -126,18 +128,25 @@ It returns the current gesture name, e.g. `"FIST"`.
 **Test:** the "I see:" line in the game should change as you change your hand.
 
 ### `hooks/useGame.js` — the rules
-Three `useEffect` blocks, each doing one job:
-1. **Countdown:** while playing, subtract 1 second every second.
-2. **Game over:** when `timeLeft` reaches 0, set status to `"over"`.
-3. **Scoring:** if your gesture equals the target, start a 500 ms timer. If your gesture changes before it finishes, React runs the cleanup (`clearTimeout`) and the timer is cancelled. That is how "you must **hold** it" works without any extra code.
+Four `useEffect` blocks, each doing one job:
+1. **Spawn:** whenever there is no enemy, wait a short pause, then create one with a random gesture (never the same twice in a row) and a time limit.
+2. **Enemy timer:** counts down to a deadline using the real clock. If it hits 0 before the enemy is defeated, status becomes `"over"` = **game over**.
+3. **Defeat:** if you show the enemy's gesture, a `HOLD_MS` timer starts. If your gesture changes first, React runs the cleanup (`clearTimeout`) and cancels it, so you must *hold* the gesture. On success: score goes up (10 points + up to 10 speed bonus), `defeated` goes up, the enemy is cleared and effect 1 spawns the next.
+4. **Best score:** remembered until you refresh the page.
 
-**Test:** click Start and show the wrong gesture: nothing happens. Show the right one: the box turns green, and after half a second the score goes up and a new target appears.
+**Escalating pressure** (two functions at the top of the file):
+- `getTimeLimit(defeated)` = start time minus 200 ms per kill, never below 1.5 s.
+- `getSpawnDelay(defeated)` = start pause minus 50 ms per kill, never below 0.15 s.
+So at 0 kills you get 5 s per enemy, at 10 kills 3 s, from 18 kills on 1.5 s.
+
+A **ref** (`timeLeftRef`) holds the remaining time so the defeat timer can read it for the speed bonus without restarting every 50 ms.
+**Test:** don't show anything: the bar drains, turns red under 30%, then GAME OVER. Defeat a few enemies and notice the bar draining faster each time.
 
 ### `components/Camera.jsx`
 Just a `<video>` and a `<canvas>` stacked on top of each other. The refs come from `App.jsx` so the hooks can reach the same elements. `muted` and `playsInline` are needed so browsers allow autoplay.
 
 ### `components/Hud.jsx`
-"HUD" = heads-up display. Shows score, time, target gesture, what the camera currently sees, and the Start / Play Again button. It only displays what it's given and has no logic of its own.
+HUD = heads-up display. Shows one of three screens: the start screen, the playing screen (enemy 👾, the required gesture, a shrinking timer bar with seconds, score and streak, and what the camera currently sees), and the GAME OVER screen (score, enemies defeated, best score, which gesture you missed, Play Again). It only displays what it's given and has no logic of its own.
 
 ### `App.jsx`
 Creates the two refs, calls the four hooks, and passes results to `Camera` and `Hud`. Read this file first; it's the table of contents of the whole app.
@@ -154,14 +163,14 @@ Video and canvas use `position: absolute` to overlap, and `transform: scaleX(-1)
 
 | # | What | How | Expected |
 |---|---|---|---|
-| 1 | Gesture logic | `npm test` | 5 PASS lines |
+| 1 | Gesture logic | `npm test` | 10 PASS lines |
 | 2 | Build works | `npm run build` | "built in ..." with no errors |
 | 3 | Camera | `npm run dev`, allow camera | You see yourself, mirrored |
 | 4 | Model + dots | Raise a hand | Cyan dots on your hand |
 | 5 | Recognition | Make each of the 4 gestures | "I see:" matches |
-| 6 | Game | Click Start | Timer counts down, target shown |
-| 7 | Scoring | Hold the target gesture | Box turns green, score +1 after ~0.5 s |
-| 8 | Game over | Wait for 0 | "Time's up!" and Play Again |
+| 6 | Game | Click Start | Enemy appears with a gesture and a timer bar |
+| 7 | Defeat | Hold the required gesture | Box turns green, score goes up, next enemy comes |
+| 8 | Game over | Let a timer reach 0 | GAME OVER screen and Play Again |
 
 Debug tip: add `console.log(gesture)` inside `App.jsx` and watch the Console (F12). Remove it when done.
 
@@ -182,7 +191,7 @@ Debug tip: add `console.log(gesture)` inside `App.jsx` and watch the Console (F1
 
 ## 6. Easy things to try next
 
-- Make it harder: lower `HOLD_MS` or `GAME_SECONDS` in `constants.js`.
-- Add a gesture, e.g. "Three fingers": add an entry in `constants.js`, then add `if (index && middle && ring && !pinky) return "THREE";` in `gestures.js`, plus a test line in `gestures.test.js`.
+- Tune difficulty in `constants.js` (`TIME_STEP_MS`, `MIN_TIME_LIMIT_MS`, ...).
+- Add a gesture, e.g. "Three fingers": add an entry in `constants.js`, then add `if (index && middle && ring && !pinky) return "THREE";` in `gestures.js`, plus a line in the `tests` list in `gestures.test.js`.
 - Add a high score using `localStorage`.
 - Add a sound on each point.
