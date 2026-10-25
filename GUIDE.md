@@ -1,6 +1,6 @@
 # Gesture Arena — Beginner Guide
 
-A webcam survival game: enemies appear one after another, each demanding a gesture (✊ ✋ ☝️ ✌️ 👍 🤘). Copy it and hold it briefly to defeat the enemy before its timer runs out. One miss = game over, and every kill makes the next enemy faster.
+A webcam combat game. Enemies walk toward your defence line, each showing a gesture. Make that gesture to hit them. Clear a round's enemies, beat the boss (which needs a *sequence* of gestures), and the next round starts, faster and harder. Enemies that reach you cost health. At 0 health: Game Over.
 
 Built with React + Vite + JavaScript + MediaPipe Hand Landmarker.
 
@@ -10,188 +10,182 @@ Built with React + Vite + JavaScript + MediaPipe Hand Landmarker.
 
 1. Install **Node.js LTS** from nodejs.org (skip if `node -v` already works in a terminal).
 2. Unzip the project, then in VS Code: **File → Open Folder → gesture-arena**.
-3. Open the terminal: **Ctrl + `** (backtick).
-4. Run:
+3. Open the terminal with **Ctrl + `** and run:
 
 ```
 npm install
 npm run dev
 ```
 
-5. Ctrl+click the `http://localhost:5173` link. Click **Allow** when Chrome/Edge asks for camera access.
-6. Wait a few seconds for "Loading camera and hand model..." to disappear, then click **Start Game**.
+4. Ctrl+click the `http://localhost:5173` link and click **Allow** for the camera.
+5. Wait until the start screen shows ✔ Camera ready and ✔ Hand model ready, then click **Start Game**.
 
-Needs an internet connection: the hand model and its WebAssembly files download from a CDN each time you load the page.
-
----
-
-## 2. The big picture (plain English)
-
-Think of an assembly line:
-
-```
-Webcam  ->  MediaPipe finds 21 hand points  ->  our code turns points into a gesture name
-                                                          |
-                                      game rules compare it with the target  ->  score
-```
-
-Each step lives in its own file, so you can read and test one piece at a time.
-
-```
-gesture-arena/
-├── index.html                      page shell, loads src/main.jsx
-├── package.json                    dependencies + npm scripts
-├── vite.config.js                  tells Vite to understand React
-└── src/
-    ├── main.jsx                    starts React
-    ├── App.jsx                     connects everything together
-    ├── constants.js                game settings + gesture list
-    ├── styles.css                  look and layout
-    ├── components/
-    │   ├── Camera.jsx              video + canvas on screen
-    │   └── Hud.jsx                 score, timer, target, buttons
-    ├── hooks/
-    │   ├── useWebcam.js            opens the camera
-    │   ├── useHandLandmarker.js    loads the MediaPipe model
-    │   ├── useGestureDetection.js  the per-frame detection loop
-    │   └── useGame.js              game rules (score, timer, target)
-    └── utils/
-        ├── gestures.js             21 points -> gesture name
-        ├── gestures.test.js        automated test for gestures.js
-        └── drawHand.js             draws the dots on the canvas
-```
-
-**Word you'll see a lot: "hook".** A hook is a function whose name starts with `use` that gives a React component some ability (remember a value, run code when something changes). Here, each hook is a small job pulled out of `App.jsx` to keep it tidy.
+Needs internet: the hand model downloads from a CDN each time the page loads.
 
 ---
 
-## 3. File by file
+## 2. The big picture
 
-### `constants.js`
-Holds numbers and gesture info in one place: hold time (`HOLD_MS`), the difficulty curve (start time limit, how much each kill shortens it, the minimum, and the same three numbers for the pause between enemies), and the gesture list with labels and emojis.
-**Test:** change `START_TIME_LIMIT_MS` to `2000`, save, and the first enemy only gives you 2 seconds.
+```
+Webcam -> MediaPipe finds 21 hand points -> gestures.js names the gesture
+       -> gestureStability.js waits until it is steady
+       -> "accepted gesture" event -> game engine decides what it hits
+```
 
-### `utils/gestures.js` — the brain of gesture recognition
-MediaPipe returns 21 points per hand. We use **angles** instead of "is the tip higher than the joint":
+The key design rule: **each stage knows nothing about the others.**
 
-- A straight finger makes a ~180° angle at its middle joint. A curled finger folds and makes a small angle.
-- `angleAt(a, b, c)` returns the angle at point `b` using the dot product: `angle = acos( dot / (length1 × length2) )`.
-- A finger counts as **extended** if its angle is above 150°.
+- The camera code never mentions enemies.
+- The game rules (`engine.js`) never mention React or the camera.
+- That is why almost everything can be tested with plain `npm test`, no browser.
 
-Because angles don't care which way the hand points, this works even if the hand is tilted or sideways (the test even flips a hand upside down).
+```
+src/
+├── main.jsx, App.jsx           start React / connect everything
+├── constants.js                EVERY tunable number and the gesture list
+├── styles.css
+├── game/
+│   ├── engine.js               ALL game rules (pure functions, no React)
+│   └── engine.test.js
+├── hooks/
+│   ├── useWebcam.js            camera + permission states + retry
+│   ├── useHandLandmarker.js    loads the model + loading states + retry
+│   ├── useGestureDetection.js  the ONE camera loop -> stability -> onAccept
+│   └── useGame.js              runs the ONE game loop, holds state in a ref
+├── components/
+│   ├── Camera.jsx              video + dots canvas
+│   ├── Hud.jsx                 left side: status, gesture, health, score, buttons
+│   ├── StartScreen.jsx         title, instructions, gesture list, checks, Start
+│   ├── Arena.jsx               right side: enemies, boss bar, banners
+│   └── Overlays.jsx            countdown, paused, game over
+└── utils/
+    ├── gestures.js (+ test)    21 points -> gesture name (angle math)
+    ├── gestureStability.js (+ test)  "is this gesture steady?" filter
+    ├── storage.js (+ test)     best score in localStorage
+    └── drawHand.js             draws the dots
+```
 
-Count which fingers are extended:
+**"Hook"** = a function starting with `use` that gives a component an ability (remember a value, run code when something changes).
 
-| Fingers | Result |
+---
+
+## 3. How each part works
+
+### Gestures — `utils/gestures.js`
+MediaPipe gives 21 points per hand. A **straight finger makes about a 180° angle** at its middle joint; a **curled finger** makes a small one. `angleAt(a, b, c)` measures that angle with the dot product: `angle = acos(dot / (length1 × length2))`. Because it measures angles, it works even if your hand is tilted.
+
+| Fingers extended | Gesture |
 |---|---|
-| none extended, thumb straight and pointing up | `THUMBS_UP` |
-| none extended, otherwise | `FIST` |
+| none, thumb straight and pointing up | `THUMBS_UP` |
+| none, thumb straight and pointing down | `THUMB_DOWN` |
+| none, otherwise | `FIST` |
 | all four | `OPEN_PALM` |
-| only index | `POINT` |
+| index only | `POINT` |
 | index + middle | `PEACE` |
 | index + pinky | `ROCK` |
-| anything else | `NONE` |
+| index + middle + ring | `THREE` (new) |
+| pinky only | `PINKY` (new) |
 
-The thumb is only used to tell **fist** from **thumbs up** (straight + tip above its joint + tip above the index knuckle). For all other gestures it is ignored on purpose.
-**Limit:** thumbs up assumes "up" means up on screen.
+The thumb is ignored except to tell fist / thumbs up / thumb down apart.
+**New in this version:** `THREE`, `PINKY`, `THUMB_DOWN`.
+**Not added on purpose:** `FOUR` (looks like `OPEN_PALM` unless the thumb is judged exactly), `CALL_ME` (the same as `PINKY`, since the thumb is ignored), `OK` (a fingertips-touching check that flickers).
 
-### `utils/gestures.test.js`
-Checks the angle math first (straight line = 180°, right angle = 90°), then builds fake hands for every gesture and checks the answer. No camera needed.
-**Test:** run `npm test`. You should see ten `PASS` lines. Try changing `FINGER_STRAIGHT_ANGLE` to `20` in `gestures.js` and watch tests fail, then undo it.
+### Stability filter — `utils/gestureStability.js`
+Raw detection flickers (FIST, FIST, NONE, FIST). If every raw result attacked, you would hit things by accident. The filter:
 
-### `utils/drawHand.js`
-Draws a cyan dot on each of the 21 points. Landmarks are 0–1, so we multiply by the canvas width/height to get pixels. It clears the canvas first on every frame, otherwise old dots would smear.
-**Test:** if you see dots following your hand, it works.
+- needs the **same gesture in 4 frames in a row** (`STABILITY_FRAMES`, about 130 ms) before it counts. It then reports it **once** as `accepted`. This is the only thing that triggers an attack.
+- changes the stable gesture only when a *different* gesture becomes stable. A one-frame glitch while you hold a fist does **not** count as a new attack.
+- to attack again with the same gesture you must change to something else (even a relaxed hand) and come back.
+- tolerates the hand vanishing for up to 8 frames (`HAND_LOST_GRACE_FRAMES`). Longer than that, **everything is cleared**, so a stale gesture can never attack later.
 
-### `hooks/useWebcam.js`
-Calls `navigator.mediaDevices.getUserMedia(...)`, the browser's built-in "give me the camera" function, and plugs the stream into the `<video>` element. The cleanup function at the bottom turns the camera off when the page closes.
-Returns `cameraReady` and `cameraError`.
-**Test:** you should see yourself. To test the error path, click the camera icon in the address bar, block access, and reload: a red error message appears.
+The camera model's own confidence is not used. MediaPipe's score is about *which hand* (left/right), not about our gesture rules, so inventing a confidence would be misleading. Stability is shown instead.
 
-### `hooks/useHandLandmarker.js`
-Downloads and starts the MediaPipe model. Important options:
-- `runningMode: "VIDEO"`: we feed it video frames.
-- `numHands: 1`: track one hand (faster, simpler).
-- `delegate: "GPU"`: use the graphics card if possible.
+### Camera and model — `useWebcam.js`, `useHandLandmarker.js`
+They report a status the start screen shows:
+camera = `initializing → requesting → granted → ready` or `denied` / `unavailable`; model = `loading → ready` or `error`. Both have a **Retry** that re-runs the setup (no page reload). If the camera is unplugged mid-game, the game pauses.
 
-The `WASM_URL` version (`0.10.14`) must match the version in `package.json`. If you ever upgrade the package, change both.
-**Test:** open DevTools (F12) → Network tab, reload, and look for `hand_landmarker.task` downloading.
+### Detection loop — `useGestureDetection.js`
+One `requestAnimationFrame` loop: new video frame → find hand → draw dots → stabilizer → if `accepted`, call `onAccept(gesture)`. It only calls `setState` when something visible changed (not 60 times a second). The newest `onAccept` is kept in a ref so the loop never calls an outdated version.
 
-### `hooks/useGestureDetection.js`
-The loop. `requestAnimationFrame` calls our `loop` function before every screen repaint (about 60 times per second). Each time:
-1. Skip if the video has no new frame.
-2. `detectForVideo(...)` finds the hand.
-3. `drawHand(...)` draws dots.
-4. `detectGesture(...)` names the gesture and saves it in state.
+### Game rules — `game/engine.js`
+Everything is a function: `newState = tick(state, ms)`, `attack(state, gesture)`, `pause`, `resume`, `startCountdown`. They never change the old state, they return a new one. **Pausing is simply "nobody calls tick".**
 
-It returns the current gesture name, e.g. `"FIST"`.
-**Test:** the "I see:" line in the game should change as you change your hand.
+Phases: `idle → countdown → playing ⇄ paused → over`.
 
-### `hooks/useGame.js` — the rules
-Four `useEffect` blocks, each doing one job:
-1. **Spawn:** whenever there is no enemy, wait a short pause, then create one with a random gesture (never the same twice in a row) and a time limit.
-2. **Enemy timer:** counts down to a deadline using the real clock. If it hits 0 before the enemy is defeated, status becomes `"over"` = **game over**.
-3. **Defeat:** if you show the enemy's gesture, a `HOLD_MS` timer starts. If your gesture changes first, React runs the cleanup (`clearTimeout`) and cancels it, so you must *hold* the gesture. On success: score goes up (10 points + up to 10 speed bonus), `defeated` goes up, the enemy is cleared and effect 1 spawns the next.
-4. **Best score:** remembered until you refresh the page.
+- **Countdown:** 3, 2, 1, GO! Nothing spawns, moves or hurts until it ends.
+- **Enemies** have health, speed, damage, a required gesture and a position `x` (1 = far right, 0 = your defence line).
+- **Attack:** hits the *closest* enemy asking for exactly that gesture. A hit lowers its health, knocks it back a little and (if it survives) changes its gesture. No match = "No target", nothing happens.
+- **Reaching you:** deals damage once and the enemy is removed. A **damage cooldown** (0.7 s) makes extra enemies wait on the line instead of draining all your health at once. Health never goes below 0.
+- **Spawning:** timer based, *not* waiting for kills, so delaying means several enemies arrive together. Limits: `MAX_ACTIVE_ENEMIES`, `MIN_SPAWN_INTERVAL_MS`. If you defeat nothing for 5 s, spawns get 30% faster.
+- **Difficulty:** one number `difficulty = (round − 1) + progress through the round` raises enemy speed and shortens the spawn interval. Each round also adds enemies, enemy health every 2 rounds, and unlocks one more gesture.
+- **Rounds:** N normal enemies, then the **boss** once all are dead. The next round starts only after the boss dies, via a short "BOSS DEFEATED" pause.
+- **Boss:** bigger, much more health, slower, hits hard. It follows a gesture list from `BOSS_SEQUENCES`: each hit changes the gesture, so one held gesture cannot hit twice. If it reaches you it hurts you and walks in again (it keeps its health).
+- **Score:** 10 per enemy, 100 + 50×round per boss.
 
-**Escalating pressure** (two functions at the top of the file):
-- `getTimeLimit(defeated)` = start time minus 200 ms per kill, never below 1.5 s.
-- `getSpawnDelay(defeated)` = start pause minus 50 ms per kill, never below 0.15 s.
-So at 0 kills you get 5 s per enemy, at 10 kills 3 s, from 18 kills on 1.5 s.
+### Game loop — `useGame.js`
+Keeps the state in a **ref** (so callbacks never see a stale copy) and copies it to React state so the screen updates. There is exactly **one** game loop and it only runs in `countdown` / `playing`. Restart creates a fresh state, it does not start a second loop. On game over it saves the best score only if it was beaten (`storage.js`).
 
-A **ref** (`timeLeftRef`) holds the remaining time so the defeat timer can read it for the speed bonus without restarting every 50 ms.
-**Test:** don't show anything: the bar drains, turns red under 30%, then GAME OVER. Defeat a few enemies and notice the bar draining faster each time.
-
-### `components/Camera.jsx`
-Just a `<video>` and a `<canvas>` stacked on top of each other. The refs come from `App.jsx` so the hooks can reach the same elements. `muted` and `playsInline` are needed so browsers allow autoplay.
-
-### `components/Hud.jsx`
-HUD = heads-up display. Shows one of three screens: the start screen, the playing screen (enemy 👾, the required gesture, a shrinking timer bar with seconds, score and streak, and what the camera currently sees), and the GAME OVER screen (score, enemies defeated, best score, which gesture you missed, Play Again). It only displays what it's given and has no logic of its own.
-
-### `App.jsx`
-Creates the two refs, calls the four hooks, and passes results to `Camera` and `Hud`. Read this file first; it's the table of contents of the whole app.
-
-### `main.jsx`, `index.html`, `vite.config.js`, `package.json`
-Standard Vite + React setup. `index.html` has an empty `<div id="root">`, `main.jsx` tells React to fill it with `<App />`.
-
-### `styles.css`
-Video and canvas use `position: absolute` to overlap, and `transform: scaleX(-1)` mirrors both so the screen behaves like a mirror (your right hand appears on the right).
+### Screen
+- **Left half:** webcam + dots, camera/hand status ("Hand not detected" when none), detected gesture with a stability bar, health bar (wide, green, ❤), score, Pause / Resume / Restart.
+- **Right half:** start screen, or the arena with enemies (thin red health bars), boss bar (big, magenta), round banners, and countdown / paused / game over overlays.
+- On narrow screens the halves stack and the camera shrinks so the arena stays visible.
 
 ---
 
-## 4. Testing checklist
+## 4. Tuning — all in `constants.js`
 
-| # | What | How | Expected |
-|---|---|---|---|
-| 1 | Gesture logic | `npm test` | 10 PASS lines |
-| 2 | Build works | `npm run build` | "built in ..." with no errors |
-| 3 | Camera | `npm run dev`, allow camera | You see yourself, mirrored |
-| 4 | Model + dots | Raise a hand | Cyan dots on your hand |
-| 5 | Recognition | Make each of the 4 gestures | "I see:" matches |
-| 6 | Game | Click Start | Enemy appears with a gesture and a timer bar |
-| 7 | Defeat | Hold the required gesture | Box turns green, score goes up, next enemy comes |
-| 8 | Game over | Let a timer reach 0 | GAME OVER screen and Play Again |
-
-Debug tip: add `console.log(gesture)` inside `App.jsx` and watch the Console (F12). Remove it when done.
+| Want | Change |
+|---|---|
+| Gestures register faster / safer | `STABILITY_FRAMES` (lower = faster) |
+| Easier | `PLAYER_MAX_HEALTH` up, `ENEMY_BASE_SPEED` down, `BASE_SPAWN_INTERVAL_MS` up |
+| Fewer enemies at once | `MAX_ACTIVE_ENEMIES` |
+| Different boss moves | edit `BOSS_SEQUENCES` (neighbours must differ) |
+| All gestures from round 1 | `START_GESTURE_COUNT` |
 
 ---
 
-## 5. Troubleshooting
+## 5. Testing
+
+```
+npm test          # 57 checks across 4 files, no camera needed
+npm run build     # production build
+npm run dev       # play it
+```
+
+| File | What it checks |
+|---|---|
+| `gestures.test.js` | every gesture, conflicts (FOUR-like stays OPEN_PALM), upside-down hand |
+| `gestureStability.test.js` | N-frame rule, flicker, glitch while holding, release, missing hand, stale clearing |
+| `storage.test.js` | missing / invalid / blocked storage, only saves a higher score |
+| `engine.test.js` | countdown, hits, closest target, damage + cooldown, game over, spawning + caps, boss + sequence, rounds, pause, restart |
+
+**Manual checklist (needs the camera):**
+
+| # | Do | Expect |
+|---|---|---|
+| 1 | Open the page | start screen with checks, gesture list |
+| 2 | Block the camera, reload | red message + Retry button |
+| 3 | Show a hand | "Hand detected", name + stability bar fills, "Stable" |
+| 4 | Lower the hand | "Hand not detected" |
+| 5 | Start Game | 3, 2, 1, GO!, no enemies yet |
+| 6 | Make an enemy's gesture | it pops, score goes up, "Hit!" |
+| 7 | Keep holding it | nothing more happens (one hit per hold) |
+| 8 | Do nothing | several enemies approach, health drops, red flash |
+| 9 | Pause, wait, Resume | everything frozen, then continues |
+| 10 | Clear a round | BOSS appears, big bar, gesture changes each hit |
+| 11 | Beat it | "BOSS DEFEATED", then ROUND 2 |
+| 12 | Lose all health | GAME OVER stats, best score; Restart keeps best |
+
+---
+
+## 6. Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| Stuck on "Loading..." | Check your internet; open F12 → Console for the error |
-| Camera error | Allow camera in the browser's address-bar icon; close Zoom/Teams/other apps using the camera |
-| Dots appear but gesture is wrong | Hold your hand upright, palm facing the camera, with good lighting |
-| `npm` not recognized | Reinstall Node.js, then close and reopen VS Code |
-| PowerShell blocks `npm` ("running scripts is disabled") | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or use Command Prompt as your VS Code terminal |
-| Page works on localhost but not on a phone/other PC | Camera access needs `localhost` or HTTPS |
-
----
-
-## 6. Easy things to try next
-
-- Tune difficulty in `constants.js` (`TIME_STEP_MS`, `MIN_TIME_LIMIT_MS`, ...).
-- Add a gesture, e.g. "Three fingers": add an entry in `constants.js`, then add `if (index && middle && ring && !pinky) return "THREE";` in `gestures.js`, plus a line in the `tests` list in `gestures.test.js`.
-- Add a high score using `localStorage`.
-- Add a sound on each point.
+| Stuck on "Loading the hand model" | Check internet, F12 → Console; use Retry |
+| Camera denied | Click the camera icon in the address bar, allow, press Retry |
+| Camera busy | Close Zoom/Teams or other apps using it |
+| A gesture is never recognised | Good light, hand clearly in view; thumbs up/down need the thumb really pointing up/down |
+| Gestures feel slow | lower `STABILITY_FRAMES` (3) |
+| Too many accidental hits | raise `STABILITY_FRAMES` (5 or 6) |
+| `npm` not recognized | Reinstall Node.js, reopen VS Code |
+| PowerShell blocks `npm` | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or use Command Prompt |

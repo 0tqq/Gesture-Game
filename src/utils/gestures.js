@@ -13,6 +13,12 @@
 // joint. A curled finger folds up and makes a small angle. Because we
 // measure ANGLES (not "is the tip higher than the joint"), a finger counts
 // as straight no matter how the hand is rotated.
+//
+// Gestures we deliberately do NOT support (they cannot be told apart
+// reliably with these landmarks):
+//   FOUR      looks the same as OPEN_PALM unless you judge the thumb exactly
+//   CALL_ME   the same as PINKY, because we ignore the thumb there
+//   OK        needs a "fingertips touching" distance check that flickers
 
 const FINGER_STRAIGHT_ANGLE = 150; // above this, a finger is "extended"
 const THUMB_STRAIGHT_ANGLE = 140; // the thumb bends less, so it is more lenient
@@ -50,6 +56,11 @@ function isFingerExtended(landmarks, [base, middle, tip]) {
   return angle > FINGER_STRAIGHT_ANGLE;
 }
 
+// The thumb is "straight" when its three joints line up.
+function isThumbStraight(landmarks) {
+  return angleAt(landmarks[2], landmarks[3], landmarks[4]) > THUMB_STRAIGHT_ANGLE;
+}
+
 // Thumbs up = thumb is straight AND points upward on screen:
 // tip above middle joint, middle joint above base joint, and the tip is
 // above the knuckle of the index finger (so it is not just resting sideways).
@@ -60,10 +71,21 @@ function isThumbsUp(landmarks) {
   const tip = landmarks[4];
   const indexKnuckle = landmarks[5];
 
-  const straight = angleAt(base, middle, tip) > THUMB_STRAIGHT_ANGLE;
   const pointingUp =
     tip.y < middle.y && middle.y < base.y && tip.y < indexKnuckle.y;
-  return straight && pointingUp;
+  return isThumbStraight(landmarks) && pointingUp;
+}
+
+// Thumb down = the mirror image of thumbs up (y grows downward).
+function isThumbDown(landmarks) {
+  const base = landmarks[2];
+  const middle = landmarks[3];
+  const tip = landmarks[4];
+  const indexKnuckle = landmarks[5];
+
+  const pointingDown =
+    tip.y > middle.y && middle.y > base.y && tip.y > indexKnuckle.y;
+  return isThumbStraight(landmarks) && pointingDown;
 }
 
 export function detectGesture(landmarks) {
@@ -75,8 +97,10 @@ export function detectGesture(landmarks) {
   const allCurled = !index && !middle && !ring && !pinky;
   const allStraight = index && middle && ring && pinky;
 
-  // Both fist and thumbs up have four curled fingers; the thumb decides.
+  // Fist, thumbs up and thumb down all have four curled fingers;
+  // the thumb decides which one it is.
   if (allCurled && isThumbsUp(landmarks)) return "THUMBS_UP";
+  if (allCurled && isThumbDown(landmarks)) return "THUMB_DOWN";
   if (allCurled) return "FIST";
 
   if (allStraight) return "OPEN_PALM";
@@ -85,6 +109,8 @@ export function detectGesture(landmarks) {
   if (index && !middle && !ring && !pinky) return "POINT";
   if (index && middle && !ring && !pinky) return "PEACE";
   if (index && pinky && !middle && !ring) return "ROCK";
+  if (index && middle && ring && !pinky) return "THREE";
+  if (pinky && !index && !middle && !ring) return "PINKY";
 
   return "NONE";
 }

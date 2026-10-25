@@ -6,17 +6,39 @@ body {
   text-align: center;
 }
 
+h1 {
+  margin: 12px 0;
+}
+
 .app {
-  max-width: 700px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 8px 16px 24px;
+}
+
+/* ---------- Layout: two equal halves, stacked on small screens ---------- */
+
+.play {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.panel {
+  min-width: 0; /* lets grid columns shrink instead of overflowing */
+}
+
+@media (max-width: 800px) {
+  .play {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* The video and canvas sit on top of each other. */
 .camera-box {
   position: relative;
-  width: 640px;
-  max-width: 100%;
+  width: 100%;
   aspect-ratio: 4 / 3;
   margin: 0 auto;
   background: #000;
@@ -32,85 +54,136 @@ body {
   transform: scaleX(-1); /* mirror, so it feels like a mirror */
 }
 
-.stats {
-  display: flex;
-  justify-content: center;
-  gap: 32px;
-  font-size: 1.4rem;
-  margin: 16px 0;
-}
+/* ---------- Left panel: status, gesture, health, score ---------- */
 
-.enemy {
-  display: inline-block;
-  min-width: 280px;
-  padding: 12px 32px;
-  border: 3px solid #475569;
+.hud {
+  margin-top: 12px;
+  padding: 4px 8px 8px;
   border-radius: 12px;
-  font-size: 1.2rem;
 }
 
-.enemy-face {
-  font-size: 3.5rem;
+.hud.damaged {
+  animation: shake 0.3s;
+  box-shadow: 0 0 0 3px #ef4444, 0 0 24px #ef4444;
 }
 
-.enemy-need {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin: 8px 0 12px;
+.status-line {
+  margin: 4px 0 10px;
+  font-size: 0.95rem;
+  color: #cbd5e1;
 }
 
-.need-emoji {
-  font-size: 3rem;
+.sep {
+  margin: 0 8px;
+  color: #475569;
 }
 
-/* Turns green while you are showing the right gesture. */
-.enemy.matching {
-  border-color: #22c55e;
-  background: #14532d;
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
 }
-
-.enemy.waiting {
-  opacity: 0.6;
+.dot.ok {
+  background: #22c55e;
 }
-
-/* Countdown bar: the fill shrinks as time runs out. */
-.timer-track {
-  height: 14px;
-  background: #334155;
-  border-radius: 7px;
-  overflow: hidden;
-}
-
-.timer-bar {
-  height: 100%;
-  background: #22d3ee;
-}
-
-.timer-bar.danger {
+.dot.bad {
   background: #ef4444;
 }
 
-.timer-text {
-  margin-top: 6px;
-  font-variant-numeric: tabular-nums;
+.gesture-box {
+  min-height: 84px;
+  padding: 8px 12px;
+  background: #1e293b;
+  border-radius: 10px;
 }
 
-.game-over h2 {
-  color: #f87171;
-  font-size: 2.2rem;
-  margin: 12px 0 4px;
+.gesture-name {
+  font-size: 1.5rem;
+  margin-bottom: 6px;
 }
 
-.big {
-  font-size: 1.6rem;
-  margin: 4px 0;
+.no-hand {
+  margin: 20px 0;
+  color: #fbbf24;
+  font-weight: 600;
 }
 
-.seen {
+.stability-track {
+  height: 10px;
+  background: #334155;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.stability-bar {
+  height: 100%;
+  background: #fbbf24;
+}
+.stability-bar.stable {
+  background: #22c55e;
+}
+
+.stability-text {
+  margin-top: 4px;
+  font-size: 0.85rem;
   color: #94a3b8;
 }
+
+/* Player health: wide, green, with a heart, so it never looks like an enemy bar. */
+.player-hp {
+  margin: 14px 0 8px;
+}
+
+.player-hp-label {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.player-hp-track {
+  height: 22px;
+  background: #334155;
+  border: 2px solid #86efac;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.player-hp-fill {
+  height: 100%;
+  background: linear-gradient(#4ade80, #16a34a);
+  transition: width 0.15s;
+}
+.player-hp-fill.low {
+  background: linear-gradient(#fbbf24, #d97706);
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 24px;
+  font-size: 1.1rem;
+  margin: 10px 0;
+}
+
+.attack-feedback {
+  min-height: 1.4em;
+  margin: 4px 0;
+  font-weight: 700;
+  color: #22d3ee;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Buttons ---------- */
 
 button {
   font-size: 1.1rem;
@@ -122,6 +195,431 @@ button {
   cursor: pointer;
 }
 
+button.secondary {
+  background: #475569;
+  color: #f1f5f9;
+}
+
+button.small {
+  font-size: 0.85rem;
+  padding: 4px 12px;
+}
+
+button:disabled {
+  background: #475569;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
 .error {
   color: #f87171;
+}
+
+/* ---------- Right panel: start screen ---------- */
+
+.start-screen {
+  text-align: left;
+  padding: 8px 16px 16px;
+  background: #1e293b;
+  border-radius: 12px;
+}
+
+.start-screen h2,
+.start-screen h3 {
+  margin: 12px 0 6px;
+}
+
+.instructions {
+  margin: 0;
+  padding-left: 20px;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.gesture-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.gesture-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #0f172a;
+  border-radius: 8px;
+}
+
+.gesture-list-emoji {
+  font-size: 1.8rem;
+}
+
+.gesture-list small {
+  color: #94a3b8;
+}
+
+.checks {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.check-text {
+  flex: 1;
+}
+
+.check.ok .check-icon {
+  color: #22c55e;
+}
+.check.bad .check-icon,
+.check.bad .check-text {
+  color: #f87171;
+}
+.check.wait .check-icon {
+  color: #fbbf24;
+}
+
+.start-button {
+  display: block;
+  width: 100%;
+  font-size: 1.4rem;
+  padding: 14px;
+}
+
+/* ---------- Right panel: arena ---------- */
+
+.arena-wrap {
+  text-align: left;
+}
+
+.arena-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 4px 8px;
+  font-size: 1.1rem;
+}
+
+.arena {
+  position: relative;
+  height: 560px;
+  overflow: hidden; /* enemies slide in from outside the right edge */
+  background: linear-gradient(90deg, #1e293b, #0b1220);
+  border: 2px solid #334155;
+  border-radius: 12px;
+}
+
+@media (max-width: 800px) {
+  .arena {
+    height: 360px;
+  }
+  /* A smaller camera keeps the arena on screen when the layout is stacked. */
+  .camera-box {
+    max-width: 240px;
+  }
+}
+
+.defence-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  border-left: 4px dashed #22d3ee;
+}
+.defence-line span {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  color: #22d3ee;
+  white-space: nowrap;
+}
+
+/* Boss health: big, magenta, at the top, unlike the thin red enemy bars. */
+.boss-bar {
+  margin-bottom: 8px;
+}
+.boss-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 800;
+  color: #e879f9;
+  margin-bottom: 2px;
+}
+.boss-bar-track {
+  height: 26px;
+  background: #3b0764;
+  border: 2px solid #e879f9;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.boss-bar-fill {
+  height: 100%;
+  background: linear-gradient(#e879f9, #a21caf);
+  transition: width 0.2s;
+}
+
+/* ---------- Enemies ---------- */
+
+.enemy {
+  position: absolute;
+  transform: translateY(-50%);
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.enemy-face {
+  font-size: 2.8rem;
+  line-height: 1;
+  animation: bob 0.8s ease-in-out infinite;
+}
+
+.gesture-bubble {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin-bottom: 4px;
+  background: #f1f5f9;
+  color: #0f172a;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.bubble-emoji {
+  font-size: 1.3rem;
+}
+
+/* Enemy health: thin and red. */
+.hp-track {
+  width: 64px;
+  height: 7px;
+  margin-top: 4px;
+  background: #450a0a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.hp-fill {
+  height: 100%;
+  background: #ef4444;
+}
+
+.enemy.hit .enemy-face {
+  animation: hit 0.25s;
+  filter: brightness(2.5);
+}
+
+.enemy.boss {
+  width: 150px;
+}
+.enemy.boss .enemy-face {
+  font-size: 5.5rem;
+  filter: drop-shadow(0 0 12px #e879f9);
+}
+.enemy.boss .gesture-bubble {
+  font-size: 1rem;
+  border: 3px solid #e879f9;
+}
+.enemy.boss .bubble-emoji {
+  font-size: 2rem;
+}
+
+.enemy.defeated {
+  animation: defeat 0.5s forwards;
+}
+.enemy.boss.defeated {
+  animation: boss-defeat 1.2s forwards;
+}
+.enemy.reached {
+  animation: reached 0.4s forwards;
+}
+
+@media (max-width: 800px) {
+  .enemy {
+    width: 64px;
+  }
+  .enemy-face {
+    font-size: 2.2rem;
+  }
+  .enemy.boss {
+    width: 110px;
+  }
+  .enemy.boss .enemy-face {
+    font-size: 4rem;
+  }
+  .gesture-bubble {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+  }
+}
+
+/* ---------- Banners and overlays ---------- */
+
+.banner {
+  position: absolute;
+  top: 12%;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  text-align: center;
+  animation: banner-in 0.4s ease-out;
+}
+.banner-text {
+  font-size: 2.4rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 8px #000;
+}
+.banner-sub {
+  font-size: 1.1rem;
+  color: #cbd5e1;
+}
+.banner.boss .banner-text,
+.banner.boss-defeated .banner-text {
+  color: #e879f9;
+}
+
+.damage-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 70px 20px rgba(239, 68, 68, 0.75);
+  animation: fade-out 0.4s forwards;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.overlay h2 {
+  margin: 0;
+  font-size: 2.4rem;
+}
+
+.countdown {
+  font-size: 7rem;
+  font-weight: 900;
+  color: #22d3ee;
+  animation: pop 1s ease-out;
+}
+
+.game-over h2 {
+  color: #f87171;
+}
+.big {
+  font-size: 1.8rem;
+  margin: 0;
+}
+.new-best {
+  margin: 0;
+  color: #fbbf24;
+  font-weight: 800;
+}
+.result-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+/* ---------- Animations (short and cheap: only transform / opacity) ---------- */
+
+@keyframes bob {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes hit {
+  30% {
+    transform: scale(1.4) rotate(-8deg);
+  }
+}
+@keyframes defeat {
+  to {
+    transform: translateY(-50%) scale(1.6);
+    opacity: 0;
+  }
+}
+@keyframes boss-defeat {
+  30% {
+    transform: translateY(-50%) scale(1.3) rotate(6deg);
+  }
+  60% {
+    transform: translateY(-50%) scale(1.5) rotate(-6deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-50%) scale(2.4);
+    opacity: 0;
+  }
+}
+@keyframes reached {
+  to {
+    transform: translateY(-50%) scale(0.2);
+    opacity: 0;
+  }
+}
+@keyframes shake {
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+@keyframes pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+}
+@keyframes banner-in {
+  from {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Respect people who turn animations off in their system settings. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

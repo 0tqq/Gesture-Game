@@ -1,5 +1,8 @@
+import { memo } from "react";
+
 // Shows the webcam video with the hand dots drawn on top.
 // The refs are created in App.jsx so the hooks can use them too.
+// memo() stops this from re-rendering every time the game state changes.
 
 function Camera({ videoRef, canvasRef }) {
   return (
@@ -10,4 +13,4 @@ function Camera({ videoRef, canvasRef }) {
   );
 }
 
-export default Camera;
+export default memo(Camera);

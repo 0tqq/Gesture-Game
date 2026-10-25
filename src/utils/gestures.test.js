@@ -40,6 +40,11 @@ function setThumb(hand, mode) {
     hand[2] = { x: 0.38, y: 0.75 };
     hand[3] = { x: 0.38, y: 0.65 };
     hand[4] = { x: 0.38, y: 0.55 };
+  } else if (mode === "down") {
+    // straight and pointing down, below the index knuckle (y 0.6)
+    hand[2] = { x: 0.38, y: 0.65 };
+    hand[3] = { x: 0.38, y: 0.75 };
+    hand[4] = { x: 0.38, y: 0.85 };
   } else if (mode === "side") {
     // straight but pointing sideways (like in an open hand)
     hand[2] = { x: 0.42, y: 0.78 };
@@ -75,6 +80,15 @@ const tests = [
   ["POINT", "POINT", { index: T, middle: F, ring: F, pinky: F }],
   ["PEACE", "PEACE", { index: T, middle: T, ring: F, pinky: F }],
   ["ROCK", "ROCK", { index: T, middle: F, ring: F, pinky: T }],
+  ["THREE", "THREE", { index: T, middle: T, ring: T, pinky: F }],
+  ["THREE (thumb out)", "THREE", { index: T, middle: T, ring: T, pinky: F, thumb: "side" }],
+  ["PINKY", "PINKY", { index: F, middle: F, ring: F, pinky: T }],
+  ["PINKY (thumb out, call-me shape)", "PINKY", { index: F, middle: F, ring: F, pinky: T, thumb: "side" }],
+  ["THUMB_DOWN", "THUMB_DOWN", { index: F, middle: F, ring: F, pinky: F, thumb: "down" }],
+  // Conflict checks: similar hands must not turn into each other.
+  ["FOUR-like hand stays OPEN_PALM", "OPEN_PALM", { index: T, middle: T, ring: T, pinky: T, thumb: "tucked" }],
+  ["thumb up is not THUMB_DOWN", "THUMBS_UP", { index: F, middle: F, ring: F, pinky: F, thumb: "up" }],
+  ["middle+ring+pinky (no index) is NONE", "NONE", { index: F, middle: T, ring: T, pinky: T }],
   ["NONE (odd shape)", "NONE", { index: F, middle: T, ring: F, pinky: T }],
 ];
 

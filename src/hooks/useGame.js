@@ -1,119 +1,88 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  HOLD_MS,
-  START_TIME_LIMIT_MS,
-  TIME_STEP_MS,
-  MIN_TIME_LIMIT_MS,
-  START_SPAWN_DELAY_MS,
-  SPAWN_DELAY_STEP_MS,
-  MIN_SPAWN_DELAY_MS,
-  GESTURE_KEYS,
-} from "../constants.js";
+  createState,
+  startCountdown,
+  tick,
+  attack,
+  pause as pauseState,
+  resume as resumeState,
+} from "../game/engine.js";
+import { loadBestScore, saveBestScore } from "../utils/storage.js";
 
-// --- Difficulty curve: both shrink as you defeat more enemies ---
-// Example with the default settings:
-//   0 defeated -> 5000 ms to react, 800 ms pause
-//   5 defeated -> 4000 ms to react, 550 ms pause
-//  17+ defeated -> 1600 ... 1500 ms (the floor), 150 ms pause
-function getTimeLimit(defeated) {
-  return Math.max(MIN_TIME_LIMIT_MS, START_TIME_LIMIT_MS - defeated * TIME_STEP_MS);
-}
+// Connects the pure game rules (game/engine.js) to React.
+//
+// The latest game state lives in a ref, so callbacks (attack, pause ...)
+// always see the newest state and can never use a stale copy. Every change
+// is also copied into React state so the screen re-renders.
+//
+// There is exactly ONE game loop. It only runs while the phase is
+// "countdown" or "playing"; pausing or game over stops it completely.
+export function useGame() {
+  const stateRef = useRef(null);
+  if (stateRef.current === null) stateRef.current = createState();
 
-function getSpawnDelay(defeated) {
-  return Math.max(MIN_SPAWN_DELAY_MS, START_SPAWN_DELAY_MS - defeated * SPAWN_DELAY_STEP_MS);
-}
+  const [state, setState] = useState(stateRef.current);
+  const [best, setBest] = useState(() => loadBestScore());
+  const [isNewBest, setIsNewBest] = useState(false);
 
-// Pick a random gesture, never the same one twice in a row.
-function pickGesture(previous) {
-  const options = GESTURE_KEYS.filter((key) => key !== previous);
-  return options[Math.floor(Math.random() * options.length)];
-}
+  // Every state change goes through here.
+  const publish = useCallback((next) => {
+    const previous = stateRef.current;
+    if (next === previous) return; // nothing changed, no re-render
 
-// All the game rules live here. It receives the current gesture from the
-// camera and decides when an enemy dies or the player loses.
-export function useGame(gesture) {
-  const [status, setStatus] = useState("idle"); // "idle" | "playing" | "over"
-  const [enemy, setEnemy] = useState(null); // { id, gesture, timeLimit } or null
-  const [timeLeft, setTimeLeft] = useState(0); // ms left for the current enemy
-  const [defeated, setDefeated] = useState(0);
-  const [score, setScore] = useState(0);
-  const [best, setBest] = useState(0); // best score since the page loaded
+    stateRef.current = next;
 
-  // Refs hold values we need to READ inside timers without restarting them.
-  const timeLeftRef = useRef(0);
-  const lastGestureRef = useRef(null);
+    // The moment the game ends, save the best score (only if it was beaten).
+    if (previous.phase !== "over" && next.phase === "over") {
+      const before = loadBestScore();
+      const after = saveBestScore(next.score);
+      setBest(after);
+      setIsNewBest(after > before);
+    }
+    setState(next);
+  }, []);
 
-  function startGame() {
-    setScore(0);
-    setDefeated(0);
-    setEnemy(null);
-    setTimeLeft(0);
-    lastGestureRef.current = null;
-    setStatus("playing");
-  }
-
-  // 1) SPAWN: whenever there is no enemy, wait a short pause, then create one.
-  //    The pause gets shorter as `defeated` grows.
+  // The one game loop.
+  const running = state.phase === "countdown" || state.phase === "playing";
   useEffect(() => {
-    if (status !== "playing" || enemy !== null) return;
+    if (!running) return;
 
-    const id = setTimeout(() => {
-      const timeLimit = getTimeLimit(defeated);
-      const gestureKey = pickGesture(lastGestureRef.current);
-      lastGestureRef.current = gestureKey;
+    let last = performance.now();
+    let frameId;
 
-      timeLeftRef.current = timeLimit;
-      setTimeLeft(timeLimit);
-      setEnemy({ id: Date.now(), gesture: gestureKey, timeLimit });
-    }, getSpawnDelay(defeated));
+    function frame(now) {
+      const dt = now - last;
+      last = now;
+      publish(tick(stateRef.current, dt));
+      frameId = requestAnimationFrame(frame);
+    }
+    frameId = requestAnimationFrame(frame);
 
-    return () => clearTimeout(id);
-  }, [status, enemy, defeated]);
+    return () => cancelAnimationFrame(frameId);
+  }, [running, publish]);
 
-  // 2) ENEMY TIMER: count down toward a deadline. If it is reached before
-  //    the enemy is defeated, the player loses.
-  //    We compare against the real clock (performance.now) instead of
-  //    subtracting 50 each tick, so the timer stays accurate.
-  useEffect(() => {
-    if (status !== "playing" || enemy === null) return;
+  // Start and Restart do the same thing: a brand-new game with a countdown.
+  // No page reload, and no new loop is created (the effect above keeps ONE).
+  const start = useCallback(() => {
+    setIsNewBest(false);
+    publish(startCountdown());
+  }, [publish]);
 
-    const deadline = performance.now() + enemy.timeLimit;
-    const id = setInterval(() => {
-      const remaining = deadline - performance.now();
-      if (remaining <= 0) {
-        timeLeftRef.current = 0;
-        setTimeLeft(0);
-        setStatus("over"); // GAME OVER
-      } else {
-        timeLeftRef.current = remaining;
-        setTimeLeft(remaining);
-      }
-    }, 50);
+  const attackWith = useCallback(
+    (gesture) => publish(attack(stateRef.current, gesture)),
+    [publish]
+  );
+  const pause = useCallback(() => publish(pauseState(stateRef.current)), [publish]);
+  const resume = useCallback(() => publish(resumeState(stateRef.current)), [publish]);
 
-    // When the enemy is defeated (enemy becomes null) this cleanup stops it.
-    return () => clearInterval(id);
-  }, [status, enemy]);
-
-  // 3) DEFEAT: if you show the enemy's gesture, hold it for HOLD_MS to hit.
-  //    If your gesture changes first, the cleanup cancels the timer.
-  useEffect(() => {
-    if (status !== "playing" || enemy === null || gesture !== enemy.gesture) return;
-
-    const id = setTimeout(() => {
-      // 10 points per enemy, plus up to 10 bonus points for being fast.
-      const speedBonus = Math.round((10 * timeLeftRef.current) / enemy.timeLimit);
-      setScore((s) => s + 10 + speedBonus);
-      setDefeated((d) => d + 1);
-      setEnemy(null); // triggers the spawn effect for the next enemy
-    }, HOLD_MS);
-
-    return () => clearTimeout(id);
-  }, [status, enemy, gesture]);
-
-  // 4) Remember the best score once the game ends.
-  useEffect(() => {
-    if (status === "over") setBest((b) => Math.max(b, score));
-  }, [status, score]);
-
-  return { status, enemy, timeLeft, defeated, score, best, startGame };
+  return {
+    state,
+    best,
+    isNewBest,
+    start,
+    restart: start,
+    attack: attackWith,
+    pause,
+    resume,
+  };
 }
